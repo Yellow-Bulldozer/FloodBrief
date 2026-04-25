@@ -1,9 +1,10 @@
-# Minimal dependencies to launch the demo UI quickly.
-# Use requirements.txt for full training, evaluation, and TerraTorch workflows.
+# FloodBrief — minimal dependencies to run the demo UI
+# Use requirements.txt for full training + TerraTorch workflows
+# Generated from: pip freeze on 2026-04-25
 
-torch>=2.1.0
-numpy>=2.2.0
-matplotlib>=3.7.0
-gradio>=4.0.0
-Pillow>=10.0.0
-scipy>=1.11.0
+torch==2.11.0
+numpy==2.4.4
+matplotlib==3.10.9
+gradio==6.13.0
+Pillow==12.2.0
+scipy==1.17.1

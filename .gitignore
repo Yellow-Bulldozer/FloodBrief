@@ -13,7 +13,8 @@ data/
 *.tif
 *.tiff
 
-# Model weights (host externally if >200 MB)
+# Model weights (host externally - too large for git)
+# Download link in README.md
 checkpoints/
 *.pt
 *.pth
