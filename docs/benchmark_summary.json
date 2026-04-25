@@ -1,0 +1,55 @@
+{
+  "artifacts": {
+    "deployment_checkpoint": {
+      "label": "Deployment checkpoint",
+      "path": "checkpoints/final_model.pt",
+      "size_bytes": 94090521,
+      "size_mb": 94.09
+    },
+    "training_checkpoint": {
+      "label": "Training checkpoint",
+      "path": "checkpoints/best_model.pt",
+      "size_bytes": 281551112,
+      "size_mb": 281.55
+    }
+  },
+  "model_metrics": {
+    "mIoU": 0.9042,
+    "flood_IoU": 0.8237,
+    "no_flood_IoU": 0.9847,
+    "precision_flood": 0.8249,
+    "recall_flood": 0.9983,
+    "f1_flood": 0.9034,
+    "accuracy": 0.9857,
+    "avg_latency_ms": 237.28
+  },
+  "baseline_metrics": {
+    "mIoU": 0.4665,
+    "flood_IoU": 0.0,
+    "precision_flood": 0.0,
+    "recall_flood": 0.0,
+    "f1_flood": 0.0,
+    "accuracy": 0.9331
+  },
+  "product_metrics": {
+    "bandwidth_saving_pct": 32.0,
+    "event_retention_pct": 100.0,
+    "downlink_precision_pct": 100.0,
+    "total_tiles": 50
+  },
+  "recorded_eval_speed": {
+    "label": "Recorded evaluation run",
+    "latency_ms_per_tile": 237.28,
+    "tiles_per_second": 4.21
+  },
+  "deployment_estimate": {
+    "hardware": "Jetson Orin Nano 8 GB",
+    "latency_ms_per_tile": 2000.0,
+    "tiles_per_second": 0.5
+  },
+  "notes": [
+    "Artifact sizes come from the local checkpoint files used for this submission.",
+    "Recorded evaluation latency comes from eval_results/evaluation_results.json.",
+    "Jetson speed is an engineering estimate for orbital deployment, not a measured benchmark."
+  ]
+}

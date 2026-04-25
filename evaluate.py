@@ -35,6 +35,7 @@ from src.metrics import (
     InferenceTimer,
 )
 from src.visualization import plot_comparison, plot_metrics_table
+from src.visualization import plot_metrics_comparison_chart
 
 
 def parse_args():
@@ -235,6 +236,11 @@ def main():
             model_metrics=seg_metrics,
             baseline_metrics=baseline_mc,
             save_path=os.path.join(vis_dir, "metrics_comparison.png"),
+        )
+        plot_metrics_comparison_chart(
+            model_metrics=seg_metrics,
+            baseline_metrics=baseline_mc,
+            save_path=os.path.join(vis_dir, "metrics_comparison_chart.png"),
         )
 
     print(f"\n{'='*60}")

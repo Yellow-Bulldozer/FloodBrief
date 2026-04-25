@@ -1,129 +1,112 @@
 """
 FloodBrief - Gradio demo app.
 
-Interactive web interface for flood detection on Sentinel-1 SAR imagery.
-Upload a tile or use a synthetic demo tile to see:
-  - Flood probability map
-  - Binary flood mask overlay
-  - Triage summary (area, confidence, urgency, downlink decision)
-  - Compact JSON output
-
 Usage:
     python app.py
-    # Opens at http://localhost:7860
 """
+
+from __future__ import annotations
 
 import os
 import sys
-import io
-import json
-import time
-import tempfile
 from pathlib import Path
 
-import numpy as np
-import torch
 import matplotlib
+import torch
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.model import load_model
-from src.triage import triage_tile
-from src.metrics import InferenceTimer
-from src.visualization import plot_flood_overlay
-
-# Try importing gradio
 try:
     import gradio as gr
 except ImportError:
-    print("ERROR: gradio not installed. Install with: pip install gradio>=4.0.0")
+    print("ERROR: gradio is not installed. Install with: pip install -r requirements-app.txt")
     sys.exit(1)
 
+from src.inference_utils import generate_synthetic_tile, load_tile
+from src.metrics import InferenceTimer
+from src.model import load_model
+from src.project_stats import (
+    load_project_summary,
+    render_benchmark_markdown,
+    render_comparison_markdown,
+)
+from src.triage import triage_tile
+from src.visualization import plot_flood_overlay, plot_metrics_comparison_chart
 
-# ---------------------------------------------------------------------------
-# Global state
-# ---------------------------------------------------------------------------
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL = None
+PROJECT_SUMMARY = load_project_summary()
 
 
 def get_model():
-    """Lazy-load the model (so startup is fast if just checking the UI)."""
+    """Lazy-load the model so the UI starts quickly."""
     global MODEL
     if MODEL is None:
-        # Try to load from checkpoint, fall back to fresh model
         checkpoint = None
-        if os.path.exists("./checkpoints/best_model.pt"):
-            checkpoint = "./checkpoints/best_model.pt"
+        preferred_checkpoint = Path("./checkpoints/final_model.pt")
+        fallback_checkpoint = Path("./checkpoints/best_model.pt")
+        if preferred_checkpoint.exists():
+            checkpoint = str(preferred_checkpoint)
+        elif fallback_checkpoint.exists():
+            checkpoint = str(fallback_checkpoint)
+
         MODEL = load_model(checkpoint_path=checkpoint, device=DEVICE)
     return MODEL
 
 
+def build_triage_markdown(triage_result, json_size_bytes: int) -> str:
+    """Render the per-tile result table."""
+    return (
+        "## Tile Result\n\n"
+        "| Metric | Value |\n"
+        "|---|---|\n"
+        f"| Decision | `{triage_result.downlink_decision.upper()}` |\n"
+        f"| Flood detected | {'Yes' if triage_result.flood_detected else 'No'} |\n"
+        f"| Flooded area | {triage_result.flooded_area_km2:.3f} km2 |\n"
+        f"| Flood fraction | {triage_result.flood_fraction:.1%} |\n"
+        f"| Confidence | {triage_result.confidence:.1%} |\n"
+        f"| Urgency | {triage_result.urgency} |\n"
+        f"| Inference latency | {triage_result.inference_latency_ms:.0f} ms |\n"
+        f"| Downlink summary size | {json_size_bytes} bytes |\n"
+        f"| Inference backend | `{getattr(MODEL, 'inference_backend', 'unknown')}` |\n"
+    )
 
-
-# ---------------------------------------------------------------------------
-# Main inference function (called by Gradio)
-# ---------------------------------------------------------------------------
 
 def run_inference(
     upload_file,
+    use_synthetic: bool,
     threshold: float,
     tile_id: str,
 ):
     """
-    Run FloodBrief inference on an uploaded tile.
+    Run FloodBrief inference on an uploaded tile or built-in demo tile.
 
     Returns:
-       (visualization_fig, json_summary, triage_text, mask_image)
+        analysis figure, JSON summary, markdown summary, mask figure, comparison figure
     """
-    # Fix memory leak from Gradio creating too many pyplot figures
-    plt.close('all')
+    plt.close("all")
 
-    img_size = 224
     model = get_model()
+    img_size = 224
 
-    # --- Load tile ---
-    if upload_file is None:
-        return None, "{}", "## ❌ Error\nPlease upload a Sentinel-1 SAR GeoTIFF file.", None
-    else:
-        # Load uploaded file
-        try:
-            from src.data_loader import Sen1Floods11Dataset
-            tile = Sen1Floods11Dataset._load_tif(upload_file)
-            if tile.shape[0] > 2:
-                tile = tile[:2]
-            elif tile.shape[0] < 2:
-                tile = np.repeat(tile, 2, axis=0)[:2]
+    try:
+        if upload_file is None and not use_synthetic:
+            error_message = "Upload a tile or enable the built-in synthetic demo tile."
+            return None, "{}", f"## Error\n{error_message}", None, None
 
-            # Resize
-            _, H, W = tile.shape
-            min_dim = min(H, W)
-            top = (H - min_dim) // 2
-            left = (W - min_dim) // 2
-            tile = tile[:, top:top + min_dim, left:left + min_dim]
+        if upload_file is None:
+            tile = generate_synthetic_tile(img_size=img_size, has_flood=True, seed=None)
+            resolved_tile_id = tile_id or "synthetic_demo"
+        else:
+            tile = load_tile(upload_file, img_size=img_size)
+            resolved_tile_id = tile_id or Path(upload_file).stem
+    except Exception as exc:
+        return None, "{}", f"## Error\n{exc}", None, None
 
-            if min_dim != img_size:
-                t = torch.from_numpy(tile).unsqueeze(0)
-                t = torch.nn.functional.interpolate(
-                    t, size=(img_size, img_size),
-                    mode="bilinear", align_corners=False
-                )
-                tile = t.squeeze(0).numpy()
-
-            # Normalize SAR
-            tile = Sen1Floods11Dataset._normalize_s1(tile, method="terramind")
-            tile = np.nan_to_num(tile, nan=0.0, posinf=0.0, neginf=0.0)
-
-            if not tile_id:
-                tile_id = Path(upload_file).stem
-
-        except Exception as e:
-            return None, f"Error loading file: {e}", str(e), None
-
-    # --- Inference ---
     input_tensor = torch.from_numpy(tile).unsqueeze(0).float().to(DEVICE)
 
     with InferenceTimer() as timer:
@@ -132,168 +115,130 @@ def run_inference(
     flood_prob = output["flood_probability"][0].cpu().numpy()
     binary_mask = output["binary_mask"][0].cpu().numpy()
 
-    # --- Triage ---
     triage_result = triage_tile(
         flood_probability=flood_prob,
-        tile_id=tile_id,
+        tile_id=resolved_tile_id,
         threshold=threshold,
         inference_latency_ms=timer.elapsed_ms,
     )
 
-    # --- Visualization ---
-    fig = plot_flood_overlay(
+    analysis_figure = plot_flood_overlay(
         sar_image=tile,
         flood_mask=binary_mask,
         flood_probability=flood_prob,
         triage_result=triage_result,
-        title=f"FloodBrief - {tile_id}",
+        title=f"FloodBrief Analysis - {resolved_tile_id}",
     )
 
-    # --- JSON summary ---
-    json_str = triage_result.to_json(indent=2)
+    json_summary = triage_result.to_json(indent=2)
+    triage_markdown = build_triage_markdown(triage_result, len(json_summary.encode("utf-8")))
 
-    # --- Triage text ---
-    decision_emoji = "🔴 DOWNLINK" if triage_result.downlink_decision == "downlink" else "🟢 SKIP"
-    urgency_emoji = {
-        "CRITICAL": "🔴", "HIGH": "🟠", "MODERATE": "🟡", "LOW": "🟢", "NONE": "⚪"
-    }.get(triage_result.urgency, "⚪")
-
-    # Fetch latest legit accuracy from validation history
-    acc_str = ""
-    try:
-        with open("checkpoints/training_history.json", "r") as f:
-            hist = json.load(f)
-            vals = hist.get("val", [])
-            if vals:
-                # We show the accuracy of the best mIoU run
-                best_val = max(vals, key=lambda x: x.get("mIoU", 0.0))
-                best_acc = best_val.get("accuracy", 0.0)
-                acc_str = f"| **Validation Accuracy:** `{best_acc:.1%}`"
-    except Exception:
-        pass
-
-    triage_text = (
-        f"## Decision: {decision_emoji}  {acc_str}\n\n"
-        f"| Metric | Value |\n"
-        f"|--------|-------|\n"
-        f"| Flood Detected | {'✅ Yes' if triage_result.flood_detected else '❌ No'} |\n"
-        f"| Flooded Area | {triage_result.flooded_area_km2:.3f} km2 |\n"
-        f"| Flood Fraction | {triage_result.flood_fraction:.1%} |\n"
-        f"| Confidence | {triage_result.confidence:.1%} |\n"
-        f"| Urgency | {urgency_emoji} {triage_result.urgency} |\n"
-        f"| Inference Latency | {triage_result.inference_latency_ms:.0f} ms |\n"
-        f"| Summary Size | ~{len(json_str)} bytes |\n"
-    )
-
-    # --- Mask image ---
-    mask_fig, mask_ax = plt.subplots(figsize=(4, 4))
-    mask_ax.imshow(binary_mask, cmap="Blues", vmin=0, vmax=1)
-    mask_ax.set_title("Flood Mask")
-    mask_ax.axis("off")
+    mask_figure, mask_axis = plt.subplots(figsize=(4, 4))
+    mask_axis.imshow(binary_mask, cmap="Blues", vmin=0, vmax=1)
+    mask_axis.set_title("Predicted Flood Mask")
+    mask_axis.axis("off")
     plt.tight_layout()
 
-    return fig, json_str, triage_text, mask_fig
+    comparison_figure = plot_metrics_comparison_chart(
+        PROJECT_SUMMARY.get("model_metrics", {}),
+        PROJECT_SUMMARY.get("baseline_metrics", {}),
+    )
 
+    return (
+        analysis_figure,
+        json_summary,
+        triage_markdown,
+        mask_figure,
+        comparison_figure,
+    )
 
-# ---------------------------------------------------------------------------
-# Gradio UI
-# ---------------------------------------------------------------------------
 
 def build_app():
     """Build the Gradio application."""
 
-    with gr.Blocks(
-        title="FloodBrief - Orbital Flood Intelligence",
-    ) as app:
-        gr.Markdown("""
-        # 🛰️ FloodBrief - Orbital-Compute Flood Intelligence
+    with gr.Blocks(title="FloodBrief - Orbital Flood Intelligence") as app:
+        gr.Markdown(
+            """
+            # FloodBrief
 
-        **Downlink the answer, not the data.**
-
-        Upload a Sentinel-1 SAR tile or generate a synthetic demo tile.
-        FloodBrief runs TerraMind-based flood segmentation and produces a compact
-        triage summary - area, confidence, urgency, and a downlink/skip decision
-        - in under 2 seconds.
-
-        *Built for the AI/ML in Space Track * TakeMe2Space x IBM TerraMind*
-        """)
+            FloodBrief turns a Sentinel-1 tile into a compact flood triage report:
+            flood mask, flooded area, confidence, urgency, and a downlink-or-skip decision.
+            """
+        )
+        gr.Markdown(render_benchmark_markdown(PROJECT_SUMMARY))
 
         with gr.Row():
             with gr.Column(scale=1):
-                gr.Markdown("### 📡 Input")
+                gr.Markdown("### Input")
 
                 upload_file = gr.File(
-                    label="Upload Sentinel-1 SAR GeoTIFF",
-                    file_types=[".tif", ".tiff", ".png", ".jpg"],
-                    visible=True,
+                    label="Upload Sentinel-1 tile",
+                    file_types=[".tif", ".tiff", ".png", ".jpg", ".jpeg"],
                 )
-
+                use_synthetic = gr.Checkbox(
+                    label="Use built-in synthetic demo tile when no file is uploaded",
+                    value=True,
+                )
                 threshold = gr.Slider(
-                    minimum=0.1, maximum=0.9, value=0.5, step=0.05,
+                    minimum=0.1,
+                    maximum=0.9,
+                    value=0.5,
+                    step=0.05,
                     label="Classification threshold",
-                    info="Higher = more conservative (fewer false positives)"
+                    info="Higher values are more conservative.",
                 )
-
                 tile_id = gr.Textbox(
                     label="Tile ID (optional)",
-                    value="",
-                    placeholder="e.g., India_103757"
+                    placeholder="e.g. India_103757",
                 )
-
-                run_btn = gr.Button("🚀 Run FloodBrief", variant="primary", size="lg")
+                run_button = gr.Button("Run FloodBrief", variant="primary", size="lg")
 
             with gr.Column(scale=2):
-                gr.Markdown("### 📊 Results")
-
-                triage_output = gr.Markdown(label="Triage Summary")
+                gr.Markdown("### Results")
+                triage_output = gr.Markdown(label="Tile summary")
 
                 with gr.Tab("Analysis"):
-                    analysis_plot = gr.Plot(label="FloodBrief Analysis")
+                    analysis_plot = gr.Plot(label="FloodBrief analysis")
 
                 with gr.Tab("Flood Mask"):
-                    mask_plot = gr.Plot(label="Flood Mask")
+                    mask_plot = gr.Plot(label="Flood mask")
 
-                with gr.Tab("JSON Summary"):
-                    json_output = gr.Code(
-                        label="Downlink JSON (~500 bytes)",
-                        language="json",
+                with gr.Tab("Model vs Baseline"):
+                    gr.Markdown(render_comparison_markdown(PROJECT_SUMMARY))
+                    comparison_plot = gr.Plot(
+                        value=plot_metrics_comparison_chart(
+                            PROJECT_SUMMARY.get("model_metrics", {}),
+                            PROJECT_SUMMARY.get("baseline_metrics", {}),
+                        ),
+                        label="Benchmark comparison chart",
                     )
 
-        # Wire up the button
-        run_btn.click(
-            fn=run_inference,
-            inputs=[upload_file, threshold, tile_id],
-            outputs=[analysis_plot, json_output, triage_output, mask_plot],
+                with gr.Tab("JSON Summary"):
+                    json_output = gr.Code(label="Downlink JSON", language="json")
+
+        gr.Markdown(
+            """
+            ### Quick Notes
+
+            - `requirements-app.txt` is the fastest path for the demo UI.
+            - `requirements.txt` includes the full training and evaluation stack.
+            - If TerraMind weights or checkpoints are unavailable, the app still starts and falls back to the lightweight demo encoder.
+            """
         )
 
-        gr.Markdown("""
-        ---
-        ### How it works
-
-        1. **Input:** Sentinel-1 SAR tile (VV + VH channels, 224x224 pixels)
-        2. **Encoder:** TerraMind-1.0-small extracts 196 patch embeddings
-        3. **Head:** UPerNet decoder produces per-pixel flood probabilities
-        4. **Triage:** Area (km2), confidence, urgency, downlink decision
-        5. **Output:** ~500-byte JSON summary (vs ~50 MB raw tile)
-
-        **Bandwidth saving per skipped tile: ~99.999%**
-
-        | Component | Detail |
-        |-----------|--------|
-        | Model | TerraMind-1.0-small (~100M params, ~200 MB FP16) |
-        | Dataset | Sen1Floods11 (4,831 chips, 11 flood events) |
-        | Input | Sentinel-1 SAR (VV, VH), 224x224 |
-        | Target hardware | Nvidia Jetson Orin Nano (8 GB, 40 TOPS INT8) |
-        | Latency | ~2 sec/tile on Jetson (est.) |
-        """)
+        run_button.click(
+            fn=run_inference,
+            inputs=[upload_file, use_synthetic, threshold, tile_id],
+            outputs=[analysis_plot, json_output, triage_output, mask_plot, comparison_plot],
+        )
 
     return app
 
 
 if __name__ == "__main__":
-    app = build_app()
-    app.launch(
-        server_name="0.0.0.0",
+    application = build_app()
+    application.launch(
+        server_name="localhost",
         server_port=7860,
         share=False,
         show_error=True,

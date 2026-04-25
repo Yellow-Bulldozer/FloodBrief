@@ -263,3 +263,83 @@ def plot_metrics_table(
         fig.savefig(save_path, dpi=150, bbox_inches="tight", facecolor="white")
 
     return fig
+
+
+def plot_metrics_comparison_chart(
+    model_metrics: dict,
+    baseline_metrics: dict,
+    save_path: Optional[str] = None,
+) -> plt.Figure:
+    """Plot a grouped bar chart comparing FloodBrief against the baseline."""
+
+    labels = [
+        "mIoU",
+        "Flood IoU",
+        "F1",
+        "Precision",
+        "Recall",
+        "Accuracy",
+    ]
+    model_values = np.array([
+        model_metrics.get("mIoU", 0.0),
+        model_metrics.get("flood_IoU", 0.0),
+        model_metrics.get("f1_flood", 0.0),
+        model_metrics.get("precision_flood", 0.0),
+        model_metrics.get("recall_flood", 0.0),
+        model_metrics.get("accuracy", 0.0),
+    ])
+    baseline_values = np.array([
+        baseline_metrics.get("mIoU", 0.0),
+        baseline_metrics.get("flood_IoU", 0.0),
+        baseline_metrics.get("f1_flood", 0.0),
+        baseline_metrics.get("precision_flood", 0.0),
+        baseline_metrics.get("recall_flood", 0.0),
+        baseline_metrics.get("accuracy", 0.0),
+    ])
+
+    x = np.arange(len(labels))
+    width = 0.34
+
+    fig, ax = plt.subplots(figsize=(10, 4.8))
+    floodbrief_bars = ax.bar(
+        x - width / 2,
+        model_values,
+        width,
+        label="FloodBrief",
+        color="#0EA5E9",
+    )
+    baseline_bars = ax.bar(
+        x + width / 2,
+        baseline_values,
+        width,
+        label="Majority baseline",
+        color="#94A3B8",
+    )
+
+    ax.set_title("FloodBrief vs Majority Baseline", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Score")
+    ax.set_ylim(0.0, 1.05)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=20, ha="right")
+    ax.grid(axis="y", linestyle="--", alpha=0.25)
+    ax.legend(frameon=False)
+
+    for bars in (floodbrief_bars, baseline_bars):
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                height + 0.02,
+                f"{height:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+            )
+
+    plt.tight_layout()
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight", facecolor="white")
+
+    return fig

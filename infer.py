@@ -16,20 +16,18 @@ With a trained checkpoint:
 
 import os
 import sys
-import json
 import argparse
-import time
 from pathlib import Path
 
-import numpy as np
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.model import load_model
-from src.triage import TriageEngine, triage_tile
+from src.triage import triage_tile
 from src.metrics import InferenceTimer
 from src.visualization import plot_flood_overlay
+from src.inference_utils import generate_synthetic_tile, load_tile
 
 
 def parse_args():
@@ -54,90 +52,6 @@ def get_device(device_str: str) -> torch.device:
         else:
             return torch.device("cpu")
     return torch.device(device_str)
-
-
-def load_tile(path: str, img_size: int = 224) -> np.ndarray:
-    """Load a Sentinel-1 SAR GeoTIFF tile."""
-    try:
-        import rasterio
-        with rasterio.open(path) as src:
-            data = src.read().astype(np.float32)
-
-            # Ensure 2 channels (VV, VH)
-            if data.shape[0] > 2:
-                data = data[:2]
-            elif data.shape[0] < 2:
-                data = np.repeat(data, 2, axis=0)[:2]
-
-            # Crop / resize to img_size
-            _, H, W = data.shape
-            min_dim = min(H, W)
-            top = (H - min_dim) // 2
-            left = (W - min_dim) // 2
-            data = data[:, top:top + min_dim, left:left + min_dim]
-
-            if min_dim != img_size:
-                t = torch.from_numpy(data).unsqueeze(0)
-                t = torch.nn.functional.interpolate(t, size=(img_size, img_size), mode="bilinear", align_corners=False)
-                data = t.squeeze(0).numpy()
-
-            # Normalize SAR dB using official function
-            from src.data_loader import Sen1Floods11Dataset
-            data = Sen1Floods11Dataset._normalize_s1(data, method="terramind")
-            data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
-
-            return data
-
-    except ImportError:
-        print("[FloodBrief] rasterio not available. Trying PIL fallback...")
-        from PIL import Image
-        img = np.array(Image.open(path), dtype=np.float32)
-        if img.ndim == 2:
-            img = np.stack([img, img], axis=0)
-        elif img.ndim == 3:
-            img = img.transpose(2, 0, 1)[:2]
-        # Resize
-        t = torch.from_numpy(img).unsqueeze(0)
-        t = torch.nn.functional.interpolate(t, size=(img_size, img_size), mode="bilinear", align_corners=False)
-        return t.squeeze(0).numpy()
-
-
-def generate_synthetic_tile(img_size: int = 224, has_flood: bool = True) -> np.ndarray:
-    """Generate a synthetic SAR tile with a flood region for demo."""
-    np.random.seed(int(time.time()) % 1000)
-
-    # Base SAR texture
-    img = np.random.uniform(0.3, 0.7, (2, img_size, img_size)).astype(np.float32)
-
-    # Add some spatial structure (blobs)
-    from scipy.ndimage import gaussian_filter
-    for c in range(2):
-        img[c] = gaussian_filter(img[c], sigma=5)
-        # Re-normalize
-        img[c] = (img[c] - img[c].min()) / (img[c].max() - img[c].min() + 1e-8)
-        img[c] = img[c] * 0.5 + 0.2
-
-    if has_flood:
-        # Create a irregular flood region
-        cx = np.random.randint(60, img_size - 60)
-        cy = np.random.randint(60, img_size - 60)
-        rx = np.random.randint(30, 70)
-        ry = np.random.randint(30, 70)
-
-        yy, xx = np.ogrid[:img_size, :img_size]
-        mask = ((xx - cx) ** 2 / rx ** 2 + (yy - cy) ** 2 / ry ** 2) <= 1.0
-
-        # Water appears dark in SAR (low backscatter)
-        img[0][mask] *= 0.15
-        img[1][mask] *= 0.15
-
-        # Add noise to edges
-        edge = gaussian_filter(mask.astype(np.float32), sigma=3) > 0.3
-        noise_mask = edge & ~mask
-        img[0][noise_mask] *= 0.5
-        img[1][noise_mask] *= 0.5
-
-    return img
 
 
 def main():

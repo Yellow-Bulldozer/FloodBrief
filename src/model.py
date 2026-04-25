@@ -148,6 +148,8 @@ class FloodBriefModel(nn.Module):
         self.img_size = img_size
         self.embed_dim = embed_dim
         self._encoder_loaded = False
+        self.use_heuristic_inference = False
+        self.inference_backend = "terramind"
 
         # Try to load the TerraMind encoder via TerraTorch registry
         try:
@@ -173,6 +175,7 @@ class FloodBriefModel(nn.Module):
             print("[FloodBrief] Using a fallback CNN encoder for demo purposes.")
             self.encoder = self._build_fallback_encoder()
             self._encoder_loaded = False
+            self.inference_backend = "fallback_cnn"
 
         # Segmentation head (always trainable)
         self.head = SegmentationHead(
@@ -255,12 +258,55 @@ class FloodBriefModel(nn.Module):
         """Run inference and produce flood mask + probabilities."""
         self.eval()
         with torch.no_grad():
+            if self.use_heuristic_inference:
+                return self._predict_with_heuristic(x)
             out = self.forward(x)
             flood_mask = out["probabilities"][:, 1, :, :]  # flood class probability
             binary_mask = (flood_mask > 0.5).long()
             out["flood_probability"] = flood_mask
             out["binary_mask"] = binary_mask
+            out["inference_backend"] = self.inference_backend
         return out
+
+    def _predict_with_heuristic(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """
+        Heuristic fallback for demo environments where TerraMind weights cannot be
+        loaded into the active runtime. Flooded regions are typically dark and
+        consistent across VV and VH, so we score low-backscatter smooth areas.
+        """
+        vv = x[:, 0:1]
+        vh = x[:, 1:2] if x.shape[1] > 1 else vv
+        sar_mean = (vv + vh) / 2.0
+        sar_std = sar_mean.std(dim=(2, 3), keepdim=True).clamp_min(1e-6)
+        sar_centered = sar_mean - sar_mean.mean(dim=(2, 3), keepdim=True)
+
+        darkness_score = -sar_centered / sar_std
+        channel_consistency = torch.exp(-torch.abs(vv - vh))
+        smoothness = 1.0 / (
+            1.0 + torch.abs(sar_mean - F.avg_pool2d(sar_mean, kernel_size=9, stride=1, padding=4))
+        )
+
+        flood_probability = torch.sigmoid(
+            1.6 * darkness_score + 0.9 * channel_consistency + 0.7 * smoothness - 1.1
+        ).squeeze(1)
+        flood_probability = F.avg_pool2d(
+            flood_probability.unsqueeze(1),
+            kernel_size=5,
+            stride=1,
+            padding=2,
+        ).squeeze(1)
+
+        binary_mask = (flood_probability > 0.5).long()
+        probabilities = torch.stack((1.0 - flood_probability, flood_probability), dim=1)
+        logits = torch.log(probabilities.clamp(min=1e-6))
+
+        return {
+            "logits": logits,
+            "probabilities": probabilities,
+            "flood_probability": flood_probability,
+            "binary_mask": binary_mask,
+            "inference_backend": "heuristic_fallback",
+        }
 
 
 def load_model(
@@ -275,11 +321,27 @@ def load_model(
     if checkpoint_path is not None:
         print(f"[FloodBrief] Loading checkpoint: {checkpoint_path}")
         state = torch.load(checkpoint_path, map_location="cpu")
+        load_result = None
         if "model_state_dict" in state:
-            model.load_state_dict(state["model_state_dict"], strict=False)
+            load_result = model.load_state_dict(state["model_state_dict"], strict=False)
         else:
-            model.load_state_dict(state, strict=False)
+            load_result = model.load_state_dict(state, strict=False)
         print("[FloodBrief] Checkpoint loaded.")
+
+        if (
+            not model._encoder_loaded
+            and load_result is not None
+            and any(key.startswith("encoder.") for key in load_result.unexpected_keys)
+        ):
+            print(
+                "[FloodBrief] TerraMind checkpoint detected without TerraMind runtime; "
+                "using heuristic fallback inference for the app."
+            )
+            model.use_heuristic_inference = True
+            model.inference_backend = "heuristic_fallback"
+    elif not model._encoder_loaded:
+        model.use_heuristic_inference = True
+        model.inference_backend = "heuristic_fallback"
 
     model = model.to(device)
     return model
