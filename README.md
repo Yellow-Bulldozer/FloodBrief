@@ -49,11 +49,10 @@ pip install -r requirements.txt
 | Item | Value |
 |---|---|
 | Deployment checkpoint | `checkpoints/final_model.pt` = `94.09 MB` on disk |
-| Training checkpoint | `checkpoints/best_model.pt` = `281.55 MB` on disk |
-| Recorded evaluation speed | `237.28 ms/tile` or about `4.21 tiles/s` |
-| Estimated orbital speed | about `2.00 s/tile` or `0.50 tiles/s` on Jetson Orin Nano 8 GB |
+| Recorded inference speed | `237.28 ms/tile` (~`4.21 tiles/s`) |
+| Estimated orbital speed | ~`2.00 s/tile` (~`0.50 tiles/s`) on Jetson Orin Nano 8 GB |
 
-The checkpoint sizes above are the actual on-disk sizes from the submission artifacts. The Jetson number is an engineering estimate for orbital deployment, not a measured device benchmark.
+The checkpoint size above is the actual on-disk size from the submission artifacts. The Jetson number is an engineering estimate for orbital deployment, not a measured device benchmark.
 
 ### FloodBrief vs majority baseline
 

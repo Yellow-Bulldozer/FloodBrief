@@ -5,12 +5,6 @@
       "path": "checkpoints/final_model.pt",
       "size_bytes": 94090521,
       "size_mb": 94.09
-    },
-    "training_checkpoint": {
-      "label": "Training checkpoint",
-      "path": "checkpoints/best_model.pt",
-      "size_bytes": 281551112,
-      "size_mb": 281.55
     }
   },
   "model_metrics": {
