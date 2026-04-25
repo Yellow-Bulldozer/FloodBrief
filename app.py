@@ -67,6 +67,7 @@ CUSTOM_CSS = """
 }
 
 /* Glassmorphism effect for Gradio panels */
+/* Glassmorphism effect for Gradio panels */
 div.form, div.gradio-box, div.gradio-panel, .gradio-container > .main {
     background: rgba(15, 23, 42, 0.4) !important;
     backdrop-filter: blur(12px) !important;
@@ -75,72 +76,10 @@ div.form, div.gradio-box, div.gradio-panel, .gradio-container > .main {
     border-radius: 12px;
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
 }
-
-/* Floating satellite placement */
-.satellite-wrapper {
-    position: absolute;
-    top: -10px;
-    right: 20px;
-    width: 120px;
-    height: 120px;
-    pointer-events: none;
-    z-index: 100;
-    animation: float 6s ease-in-out infinite;
-    opacity: 0.9;
-}
-
-@keyframes float {
-    0% { transform: translateY(0px) rotate(0deg); }
-    50% { transform: translateY(-12px) rotate(3deg); }
-    100% { transform: translateY(0px) rotate(0deg); }
-}
-
-@keyframes twinkle {
-    0% { opacity: 0.4; }
-    100% { opacity: 0.8; }
-}
 """
-
-SATELLITE_SVG = """
-<div class="satellite-wrapper">
-    <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <!-- Solar Panel Left -->
-        <rect x="5" y="30" width="20" height="40" fill="#0EA5E9" stroke="#38BDF8" stroke-width="1.5"/>
-        <line x1="15" y1="30" x2="15" y2="70" stroke="#0284C7" stroke-width="1"/>
-        <line x1="5" y1="50" x2="25" y2="50" stroke="#0284C7" stroke-width="1"/>
-        
-        <!-- Solar Panel Right -->
-        <rect x="75" y="30" width="20" height="40" fill="#0EA5E9" stroke="#38BDF8" stroke-width="1.5"/>
-        <line x1="85" y1="30" x2="85" y2="70" stroke="#0284C7" stroke-width="1"/>
-        <line x1="75" y1="50" x2="95" y2="50" stroke="#0284C7" stroke-width="1"/>
-        
-        <!-- Central Body -->
-        <rect x="35" y="25" width="30" height="50" rx="4" fill="#94A3B8" stroke="#CBD5E1" stroke-width="1.5"/>
-        <rect x="40" y="30" width="20" height="40" rx="2" fill="#475569"/>
-        
-        <!-- Arms -->
-        <rect x="25" y="47" width="10" height="6" fill="#64748B"/>
-        <rect x="65" y="47" width="10" height="6" fill="#64748B"/>
-        
-        <!-- Antenna Dish -->
-        <path d="M 30,22 C 50,7 70,22 70,22 C 70,22 50,17 30,22 Z" fill="#E2E8F0"/>
-        <line x1="50" y1="17" x2="50" y2="7" stroke="#CBD5E1" stroke-width="1.5"/>
-        <circle cx="50" cy="7" r="2.5" fill="#EF4444" opacity="0.9">
-            <animate attributeName="opacity" values="1;0;1" dur="2s" repeatCount="indefinite" />
-        </circle>
-        
-        <!-- Thruster -->
-        <path d="M 40,75 L 60,75 L 55,83 L 45,83 Z" fill="#64748B"/>
-        <path d="M 46,83 L 54,83 L 51,93 L 49,93 Z" fill="#38BDF8" opacity="0.8">
-            <animate attributeName="opacity" values="0.8;0.4;0.8" dur="0.5s" repeatCount="indefinite" />
-        </path>
-    </svg>
-</div>
-"""
-
-
 
 def get_model():
+
     """Lazy-load the model so the UI starts quickly."""
     global MODEL
     if MODEL is None:
@@ -255,11 +194,10 @@ def build_app():
     """Build the Gradio application."""
 
     with gr.Blocks(title="FloodBrief - Orbital Flood Intelligence", css=CUSTOM_CSS) as app:
-        gr.HTML(SATELLITE_SVG)
         gr.HTML(
             """
             <div style="text-align: center; margin-bottom: 2rem; margin-top: 1rem;">
-                <h1 style="font-size: 3rem; font-weight: 800; background: -webkit-linear-gradient(45deg, #38BDF8, #818CF8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; letter-spacing: -0.02em;">🛸 FloodBrief</h1>
+                <h1 style="font-size: 3rem; font-weight: 800; background: -webkit-linear-gradient(45deg, #38BDF8, #818CF8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; letter-spacing: -0.02em;">FloodBrief</h1>
                 <p style="font-size: 1.15rem; color: #94A3B8; max-width: 600px; margin: 0 auto; font-weight: 500; font-family: monospace;">Orbital-Compute Flood Intelligence</p>
                 <div style="height: 1px; background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.3), transparent); width: 80%; margin: 1.5rem auto;"></div>
                 <p style="font-size: 1rem; color: #CBD5E1; max-width: 750px; margin: 0 auto; line-height: 1.6;">FloodBrief turns a Sentinel-1 tile into a compact flood triage report: flood mask, flooded area, confidence, urgency, and a downlink-or-skip decision. <strong>Downlink the answer, not the data.</strong></p>
