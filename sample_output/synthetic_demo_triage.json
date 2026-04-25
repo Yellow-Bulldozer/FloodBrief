@@ -1,0 +1,15 @@
+{
+  "flood_detected": true,
+  "flooded_pixels": 49323,
+  "total_pixels": 50176,
+  "flood_fraction": 0.983,
+  "flooded_area_km2": 4.9323,
+  "confidence": 0.9203,
+  "urgency": "HIGH",
+  "downlink_decision": "downlink",
+  "tile_id": "synthetic_demo",
+  "timestamp": "2026-04-24T21:31:22Z",
+  "inference_latency_ms": 65.16,
+  "model_name": "terramind_v1_small",
+  "summary_bytes": 0
+}

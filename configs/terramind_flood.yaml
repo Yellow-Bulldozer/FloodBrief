@@ -1,0 +1,163 @@
+# =============================================================================
+# FloodBrief - TerraTorch fine-tuning config for Sen1Floods11
+#
+# Based on IBM's official config:
+#   https://github.com/IBM/terramind/blob/main/configs/terramind_v1_base_sen1floods11.yaml
+#
+# Usage:
+#   terratorch fit -c configs/terramind_flood.yaml
+#   terratorch test -c configs/terramind_flood.yaml --ckpt_path output/checkpoints/best-mIoU.ckpt
+#
+# NOTE: Update data paths below to match your local sen1floods11_v1.1/ location.
+# =============================================================================
+
+seed_everything: 42
+
+trainer:
+  accelerator: auto
+  strategy: auto
+  devices: auto
+  num_nodes: 1
+  precision: 16-mixed
+  logger: true
+  callbacks:
+    - class_path: RichProgressBar
+    - class_path: LearningRateMonitor
+      init_args:
+        logging_interval: epoch
+    - class_path: ModelCheckpoint
+      init_args:
+        dirpath: output/floodbrief/checkpoints/
+        mode: max
+        monitor: val/mIoU
+        filename: best-mIoU
+        save_weights_only: true
+  max_epochs: 50
+  log_every_n_steps: 5
+  default_root_dir: output/floodbrief/
+
+# =============================================================================
+# DATA: Sen1Floods11 v1.1 (Sentinel-1 + Sentinel-2, multimodal)
+# =============================================================================
+data:
+  class_path: terratorch.datamodules.GenericMultiModalDataModule
+  init_args:
+    task: 'segmentation'
+    batch_size: 8
+    num_workers: 4
+    num_classes: 2
+
+    # Input modalities
+    modalities:
+      - S2L1C
+      - S1GRD
+    rgb_modality: S2L1C
+    rgb_indices:
+      - 3
+      - 2
+      - 1
+
+    # === DATA PATHS (update these to your local paths) ===
+    train_data_root:
+      S2L1C: data/sen1floods11_v1.1/data/S2L1CHand
+      S1GRD: data/sen1floods11_v1.1/data/S1GRDHand
+    train_label_data_root: data/sen1floods11_v1.1/data/LabelHand
+    val_data_root:
+      S2L1C: data/sen1floods11_v1.1/data/S2L1CHand
+      S1GRD: data/sen1floods11_v1.1/data/S1GRDHand
+    val_label_data_root: data/sen1floods11_v1.1/data/LabelHand
+    test_data_root:
+      S2L1C: data/sen1floods11_v1.1/data/S2L1CHand
+      S1GRD: data/sen1floods11_v1.1/data/S1GRDHand
+    test_label_data_root: data/sen1floods11_v1.1/data/LabelHand
+
+    # === SPLIT FILES (official train/val/test partitions) ===
+    train_split: data/sen1floods11_v1.1/splits/flood_train_data.txt
+    val_split: data/sen1floods11_v1.1/splits/flood_valid_data.txt
+    test_split: data/sen1floods11_v1.1/splits/flood_test_data.txt
+
+    # File naming patterns
+    image_grep:
+      S2L1C: "*_S2Hand.tif"
+      S1GRD: "*_S1Hand.tif"
+    label_grep: "*_LabelHand.tif"
+
+    # Label handling
+    no_label_replace: -1   # Replace NaN labels with -1 (ignored in loss)
+    no_data_replace: 0     # Replace NaN data with 0
+    num_classes: 2
+
+    # Band selection (optional, use all bands by default)
+    dataset_bands:
+      S1GRD: ["VV", "VH"]
+    output_bands:
+      S1GRD: ["VV", "VH"]
+
+    # IBM TerraMind pre-training normalization statistics
+    means:
+      S2L1C: [2357.089, 2137.385, 2018.788, 2082.986, 2295.651, 2854.537, 3122.849, 3040.560, 3306.481, 1473.847, 506.070, 2472.825, 1838.929]
+      S1GRD: [-12.599, -20.293]
+    stds:
+      S2L1C: [1624.683, 1675.806, 1557.708, 1833.702, 1823.738, 1733.977, 1732.131, 1679.732, 1727.26, 1024.687, 442.165, 1331.411, 1160.419]
+      S1GRD: [5.195, 5.890]
+
+    # Augmentation
+    train_transform:
+      - class_path: albumentations.D4    # Random flip + 90-degree rotations
+      - class_path: albumentations.pytorch.transforms.ToTensorV2
+
+# =============================================================================
+# MODEL: TerraMind-small + UNetDecoder
+# =============================================================================
+model:
+  class_path: terratorch.tasks.SemanticSegmentationTask
+  init_args:
+    model_factory: EncoderDecoderFactory
+    model_args:
+      backbone: terramind_v1_small
+      backbone_pretrained: true
+      backbone_modalities:
+        - S2L1C
+        - S1GRD
+      backbone_merge_method: mean
+
+      # Feature extraction necks
+      necks:
+        - name: SelectIndices
+          indices: [2, 5, 8, 11]   # For small/base variants
+        - name: ReshapeTokensToImage
+          remove_cls_token: False
+        - name: LearnedInterpolateToPyramidal
+
+      # Decoder
+      decoder: UNetDecoder
+      decoder_channels: [256, 128, 64, 32]
+
+      # Head
+      head_dropout: 0.1
+      num_classes: 2
+
+    # Training settings
+    loss: dice
+    ignore_index: -1
+    freeze_backbone: false    # Fine-tune backbone for best results
+    freeze_decoder: false
+    class_names:
+      - Others
+      - Flood
+    class_weights: [0.3, 0.7]  # Upweight underrepresented flood class
+
+# =============================================================================
+# OPTIMIZER & SCHEDULER
+# =============================================================================
+optimizer:
+  class_path: torch.optim.AdamW
+  init_args:
+    lr: 2.e-5
+
+lr_scheduler:
+  class_path: ReduceLROnPlateau
+  init_args:
+    monitor: val/loss
+    factor: 0.5
+    patience: 5

@@ -1,0 +1,51 @@
+# FloodBrief
+
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Data (do not commit datasets)
+data/
+*.tif
+*.tiff
+
+# Model weights (host externally if >200 MB)
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Evaluation outputs
+eval_results/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets
+.env
+*.key
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Virtual environment
+venv/
+.venv/
+
+# Temp
+*.tmp
+*.log
+unicode_audit.txt

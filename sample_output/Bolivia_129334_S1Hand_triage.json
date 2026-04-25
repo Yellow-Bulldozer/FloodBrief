@@ -1,0 +1,15 @@
+{
+  "flood_detected": true,
+  "flooded_pixels": 1936,
+  "total_pixels": 50176,
+  "flood_fraction": 0.0386,
+  "flooded_area_km2": 0.1936,
+  "confidence": 0.602,
+  "urgency": "LOW",
+  "downlink_decision": "downlink",
+  "tile_id": "Bolivia_129334_S1Hand",
+  "timestamp": "2026-04-24T23:15:10Z",
+  "inference_latency_ms": 80.61,
+  "model_name": "terramind_v1_small",
+  "summary_bytes": 0
+}

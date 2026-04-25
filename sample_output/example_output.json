@@ -1,0 +1,15 @@
+{
+  "tile_id": "India_103757",
+  "flood_detected": true,
+  "flooded_pixels": 7843,
+  "total_pixels": 50176,
+  "flood_fraction": 0.1563,
+  "flooded_area_km2": 0.7843,
+  "confidence": 0.8245,
+  "urgency": "MODERATE",
+  "downlink_decision": "downlink",
+  "timestamp": "2026-04-24T18:30:00Z",
+  "inference_latency_ms": 823.4,
+  "model_name": "terramind_v1_small",
+  "summary_bytes": 412
+}
