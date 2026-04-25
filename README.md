@@ -6,19 +6,31 @@ FloodBrief is a flood-triage app for Sentinel-1 SAR imagery. It segments flooded
 
 If you want the app running fast, use the lightweight demo stack:
 
-```bash
-git clone <repo-url>
+**Windows:**
+```powershell
+git clone https://github.com/Yellow-Bulldozer/FloodBrief.git
 cd FloodBrief
-
-py -3.14 -m venv .venv
+py -3.11 -m venv .venv
 .\.venv\Scripts\activate
 pip install -r requirements-app.txt
 python app.py
 ```
 
-Open `http://localhost:7860`, leave `Use built-in synthetic demo tile` enabled, and click `Run FloodBrief`.
+**macOS / Linux:**
+```bash
+git clone https://github.com/Yellow-Bulldozer/FloodBrief.git
+cd FloodBrief
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-app.txt
+python app.py
+```
 
-If you want the full TerraTorch training/evaluation workflow instead of the quick demo path:
+Open `http://localhost:7860`. Leave `Use built-in synthetic demo tile` checked and click **Run FloodBrief** — no dataset download required.
+
+To use a real Sentinel-1 tile instead: uncheck the box and upload any `_S1Hand.tif` file from Sen1Floods11.
+
+If you want the full TerraTorch training/evaluation workflow:
 
 ```bash
 pip install -r requirements.txt
