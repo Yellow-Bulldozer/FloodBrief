@@ -106,7 +106,6 @@ def render_benchmark_markdown(summary: Dict[str, Any]) -> str:
         "| Item | Value |\n"
         "|---|---|\n"
         f"| Deployment checkpoint | {deployment.get('size_mb', 0.0):.2f} MB on disk (`{deployment.get('path', 'n/a')}`) |\n"
-        f"| Training checkpoint | {training.get('size_mb', 0.0):.2f} MB on disk (`{training.get('path', 'n/a')}`) |\n"
         f"| Recorded inference speed | {recorded_speed.get('latency_ms_per_tile', 0.0):.2f} ms/tile (~{recorded_speed.get('tiles_per_second', 0.0):.2f} tiles/s) |\n"
         f"| Estimated orbital speed | {orbit_speed.get('latency_ms_per_tile', 0.0) / 1000.0:.2f} s/tile (~{orbit_speed.get('tiles_per_second', 0.0):.2f} tiles/s) on {orbit_speed.get('hardware', 'target edge hardware')} |\n"
         f"| Bandwidth saved in recorded eval | {product_metrics.get('bandwidth_saving_pct', 0.0):.1f}% |\n"
